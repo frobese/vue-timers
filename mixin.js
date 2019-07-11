@@ -1,5 +1,27 @@
 import { set, isArray } from './utils'
 
+var hidden, visibilitychange, visibilityState
+
+if (typeof document.hidden !== 'undefined') { // Opera 12.10, Firefox 18 and later support
+  hidden = 'hidden'
+  visibilitychange = 'visibilitychange'
+  visibilityState = 'visibilityState'
+} else if (typeof document.mozHidden !== 'undefined') {
+  hidden = 'mozHidden'
+  visibilitychange = 'mozvisibilitychange'
+  visibilityState = 'mozVisibilityState'
+} else if (typeof document.msHidden !== 'undefined') {
+  hidden = 'msHidden'
+  visibilitychange = 'msvisibilitychange'
+  visibilityState = 'msVisibilityState'
+} else if (typeof document.webkitHidden !== 'undefined') {
+  hidden = 'webkitHidden'
+  visibilitychange = 'webkitvisibilitychange'
+  visibilityState = 'webkitVisibilityState'
+} else {
+  // not available
+}
+
 function generateData(timers) {
   return Object.keys(timers).reduce(function(acc, cur) {
     return set(
@@ -24,8 +46,12 @@ function clearTimer(repeat) {
 
 function generateTimer(options, vm) {
   return setTimer(options.repeat)(function() {
-    vm.$emit('timer-tick:' + options.name)
-    options.callback()
+    if (options.autostart === 'visibility' && document[hidden]) {
+      vm.$timer.stop(options.name)
+    } else {
+      vm.$emit('timer-tick:' + options.name)
+      options.callback()
+    }
   }, options.time)
 }
 
@@ -127,6 +153,21 @@ export default {
         this.stop(name)
         this.start(name)
         vm.$emit('timer-restart:' + name)
+      },
+
+      visibilitychange: () => {
+        var vm = this
+        var options = vm.$options.timers
+        if (document[hidden]) {
+          // timers will auto-stop with next tick
+        } else {
+          // restart timers
+          Object.keys(options).forEach(function (key) {
+            if (options[key].autostart === 'visibility' && !options[key].isRunning) {
+              vm.$timer.start(key)
+            }
+          })
+        }
       }
     }
   },
@@ -140,6 +181,7 @@ export default {
         vm.$timer.start(key)
       }
     })
+    document.addEventListener(visibilitychange, vm.$timer.visibilitychange)
   },
 
   activated: function() {
@@ -169,6 +211,7 @@ export default {
   beforeDestroy: function() {
     if (!this.$options.timers) return
     var vm = this
+    document.removeEventListener(visibilitychange, vm.$timer.visibilitychange)
     Object.keys(vm.$options.timers).forEach(function(key) {
       vm.$timer.stop(key)
     })
